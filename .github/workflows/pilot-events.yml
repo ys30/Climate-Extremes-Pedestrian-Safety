@@ -1,0 +1,22 @@
+name: January 2022 event manifest
+on:
+  push:
+    paths: ['src/pilot_events.py','.github/workflows/pilot-events.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  events:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python src/pilot_events.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: january-event-manifest
+          path: pilot_manifest.json
+          if-no-files-found: error
