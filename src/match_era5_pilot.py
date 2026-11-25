@@ -1,0 +1,62 @@
+import json, math, time, urllib.request, urllib.parse
+from collections import Counter, defaultdict
+from datetime import datetime,timedelta
+from pathlib import Path
+from weather_probe_openmeteo import BASE,VARS,UNITS
+
+def cell(e): return (round(e["lat"]*4)/4,round(e["lon"]*4)/4)
+def distance(a,b,c,d):
+    x=math.sin(math.radians(c-a)/2)**2+math.cos(math.radians(a))*math.cos(math.radians(c))*math.sin(math.radians(d-b)/2)**2
+    return 6371*2*math.asin(min(1,math.sqrt(x)))
+def fetch(g):
+    params=dict(latitude=g[0],longitude=g[1],start_date="2021-12-30",end_date="2022-01-31",hourly=",".join(VARS),models="era5",timezone="GMT",wind_speed_unit="ms",temperature_unit="celsius",precipitation_unit="mm",cell_selection="nearest",elevation="nan")
+    url=BASE+"?"+urllib.parse.urlencode(params)
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(url,timeout=45) as r:d=json.load(r)
+            break
+        except (OSError,ValueError):
+            if attempt==2:raise
+            time.sleep(3*(attempt+1))
+    h=d["hourly"]; ts=h["time"]
+    expected=[(datetime(2021,12,30)+timedelta(hours=i)).isoformat(timespec="minutes") for i in range(33*24)]
+    assert ts==expected and d["utc_offset_seconds"]==0
+    for v in VARS:
+        assert d["hourly_units"][v]==UNITS[v] and len(h[v])==len(ts)
+    return d,{t:i for i,t in enumerate(ts)},url
+
+def match(e,d,idx):
+    h=d["hourly"]; stamp=datetime.fromisoformat(e["utc"]).replace(minute=0,second=0,microsecond=0)
+    i=idx[stamp.replace(tzinfo=None).isoformat(timespec="minutes")]
+    assert i>=23
+    vals={v:h[v][i] for v in VARS}
+    rain=h["precipitation"][i-23:i+1]
+    if any(x is None or not math.isfinite(x) for x in list(vals.values())+rain):return None
+    if min(rain)<0 or vals["wind_speed_10m"]<0:return None
+    dist=distance(e["lat"],e["lon"],d["latitude"],d["longitude"])
+    if dist>25:return None
+    return dict(rural=e["rural"],weather=e["weather"],ksi=e["ksi"],temperature=vals["temperature_2m"],wind=vals["wind_speed_10m"],dew=vals["dew_point_2m"],distance_km=dist,**{f"precipitation_{n}h":sum(rain[-n:]) for n in (1,3,6,24)})
+def main():
+    events=json.loads(Path("work/events.json").read_text())
+    by=defaultdict(list)
+    for e in events:by[cell(e)].append(e)
+    selected=[]
+    for code in ("1","2"):
+        ranked=sorted(by,key=lambda g:(-sum(e["rural"]==code for e in by[g]),g))
+        selected.extend([g for g in ranked if g not in selected and any(e["rural"]==code for e in by[g])][:5])
+    output=[]; errors=[]; matched=[]
+    for g in selected:
+        try:
+            d,idx,url=fetch(g)
+            rows=[match(e,d,idx) for e in by[g]]
+            valid=[r for r in rows if r is not None]; matched.extend(valid)
+            output.append(dict(requested=g,returned=[d["latitude"],d["longitude"]],url=url,eligible=len(rows),matched=len(valid)))
+        except Exception as exc:errors.append(dict(cell=g,error=repr(exc)))
+        time.sleep(1)
+    result=dict(model="era5",candidate_cells=len(by),selected_cells=len(selected),eligible=sum(len(by[g]) for g in selected),matched=len(matched),cells=output,errors=errors,groups=dict(Counter(str(r["rural"]) for r in matched)),note="Purposive high-count grid engineering pilot; not representative. Hourly precipitation ends at floor(event UTC hour).")
+    if matched:
+        result["ranges"]={k:[min(r[k] for r in matched),max(r[k] for r in matched)] for k in ("temperature","wind","distance_km","precipitation_1h","precipitation_3h","precipitation_6h","precipitation_24h")}
+    Path("match_summary.json").write_text(json.dumps(result,indent=2))
+    print(json.dumps(result,indent=2))
+    assert len(selected)==10 and not errors and len(matched)==result["eligible"],"Pilot completeness gate failed"
+if __name__=="__main__":main()
