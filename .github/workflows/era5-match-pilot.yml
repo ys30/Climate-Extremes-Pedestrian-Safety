@@ -1,0 +1,29 @@
+name: ERA5 E1 event matching
+on:
+  push:
+    paths: ['src/match_era5_pilot.py','.github/workflows/era5-match-pilot.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: era5-e1
+  cancel-in-progress: false
+jobs:
+  match:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python src/pilot_events.py
+      - run: python src/match_era5_pilot.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: era5-e1-summary
+          path: |
+            pilot_manifest.json
+            match_summary.json
+          if-no-files-found: error
