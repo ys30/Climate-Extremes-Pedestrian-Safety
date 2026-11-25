@@ -1,0 +1,33 @@
+name: STATS19 pilot audit
+on:
+  push:
+    paths:
+      - 'src/audit.py'
+      - '.github/workflows/stats19-audit.yml'
+  workflow_dispatch:
+    inputs:
+      year:
+        description: Annual final data year
+        default: '2022'
+        type: choice
+        options: ['2016','2017','2018','2019','2020','2021','2022','2023','2024','2025']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Audit official data
+        env:
+          YEAR: ${{ inputs.year || '2022' }}
+        run: python src/audit.py --year "$YEAR" --out "results/$YEAR.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stats19-audit
+          path: results/*.json
+          if-no-files-found: error
