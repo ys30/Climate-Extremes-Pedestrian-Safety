@@ -1,6 +1,7 @@
 import csv, hashlib, io, json, re, urllib.request
 from pathlib import Path
-from collections import defaultdict
+from collections import defaultdict, Counter
+from audit import key
 from audit import Links, get, CATALOG, audit
 YEARS=set(range(2016,2021))
 def extract(kind):
@@ -24,9 +25,23 @@ def main():
     coll,cm=extract("collision")
     cas,sm=extract("casualt(?:y|ies)")
     out=Path("results");out.mkdir(exist_ok=True)
+    blocked=[]
     for year in sorted(YEARS):
         c,s=coll[year],cas[year]
+        groups=defaultdict(list)
+        for row in s: groups[(key(row),row.get("casualty_reference",""))].append(row)
+        missing=[r for (a,b),rs in groups.items() if not a.strip() or not b.strip() for r in rs]
+        dup=[rs for k,rs in groups.items() if all(v.strip() for v in k) and len(rs)>1]
+        exact=[rs for rs in dup if all(r==rs[0] for r in rs)]
+        conflict=[rs for rs in dup if not all(r==rs[0] for r in rs)]
+        diag={"year":year,"raw_casualties":len(s),"raw_pedestrians":sum(r.get("casualty_type")=="0" for r in s),"missing_key_rows":len(missing),"duplicate_groups":len(dup),"exact_duplicate_groups":len(exact),"conflicting_groups":len(conflict),"duplicate_excess_rows":sum(len(rs)-1 for rs in dup),"missing_key_types":dict(Counter(r.get("casualty_type") for r in missing)),"conflict_types":dict(Counter(r.get("casualty_type") for rs in conflict for r in rs)),"conflicting_fields":dict(Counter(k for rs in conflict for k in rs[0] if len({r.get(k) for r in rs})>1))}
+        (out/f"diagnostic-{year}.json").write_text(json.dumps(diag,indent=2))
+        print(json.dumps(diag),flush=True)
+        if missing or conflict:
+            blocked.append(year); continue
+        s=[rs[0] for rs in groups.values()]
         result={"year":year,"collision":dict(cm,rows=len(c),columns=list(c[0])),"casualty":dict(sm,rows=len(s),columns=list(s[0])),"audit":audit(c,s),"severity_note":"Recorded severity; not adjusted"}
         (out/f"{year}.json").write_text(json.dumps(result,indent=2))
         print(year,json.dumps(result["audit"]))
+    if blocked: raise ValueError(f"Unresolved historical casualty keys: {blocked}")
 if __name__=="__main__": main()
