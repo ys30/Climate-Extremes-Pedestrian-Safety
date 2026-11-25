@@ -1,0 +1,22 @@
+name: Open-Meteo weather pilot
+on:
+  push:
+    paths: ['src/weather_probe_openmeteo.py','.github/workflows/openmeteo-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python src/weather_probe_openmeteo.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openmeteo-probe
+          path: probe_openmeteo.json
+          if-no-files-found: error
