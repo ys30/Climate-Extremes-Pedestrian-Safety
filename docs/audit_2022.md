@@ -1,0 +1,4 @@
+# 2022 pilot audit — verified
+Run: https://github.com/ys30/Climate-Extremes-Pedestrian-Safety/actions/runs/45661856031
+Recorded pedestrian casualties: 19327; collisions: 18583; slight: 13419; serious: 5523; fatal: 385; KSI: 5908. Four missing coordinate pairs. Source checksums in run artifact.
+Legacy portfolio reports 20927 casualties, 14409 slight, 6010 serious, 508 fatal. Its R/01_prepare_data.R joins vehicles by accident_index alone, multiplying each casualty by the number of vehicles in multi-vehicle collisions. This is a confirmed structural defect in the legacy reconstruction, not yet a quantitative reconciliation of its reported counts. Correct vehicle linkage must use collision/accident index plus vehicle_reference, with unmatched records audited, never silently dropped. Later multi-year manuscript code must be checked independently; its results are not validated by this audit.
