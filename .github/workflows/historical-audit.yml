@@ -16,6 +16,7 @@ jobs:
           python-version: '3.11'
       - run: python src/historical_audit.py
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: historical-audit-2016-2020
           path: results/*.json
