@@ -16,7 +16,10 @@ jobs:
           python-version: '3.11'
       - run: python src/weather_probe_openmeteo.py
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: openmeteo-probe
-          path: probe_openmeteo.json
+          path: |
+            probe_openmeteo.json
+            probe_summary.json
           if-no-files-found: error
