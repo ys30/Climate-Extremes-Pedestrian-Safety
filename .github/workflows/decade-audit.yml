@@ -1,0 +1,57 @@
+name: STATS19 decade audit
+on:
+  push:
+    paths: ['.github/workflows/decade-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  annual:
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        year: [2016,2017,2018,2019,2020,2021,2022,2023,2024,2025]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python src/audit.py --year ${{ matrix.year }} --out results/${{ matrix.year }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: audit-${{ matrix.year }}
+          path: results/*.json
+          if-no-files-found: error
+  summary:
+    needs: annual
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: audit-*
+          merge-multiple: true
+          path: results
+      - name: Summarize annual counts
+        run: |
+          python - <<'PY'
+          import json,csv
+          from pathlib import Path
+          rows=[]
+          for p in sorted(Path('results').glob('*.json')):
+              d=json.loads(p.read_text()); a=d['audit']; s=a['severity_codes']
+              rows.append([d['year'],a['pedestrian_casualties'],a['pedestrian_collisions'],s.get('1',0),s.get('2',0),s.get('3',0),a['ksi_recorded'],a['missing_event_fields'].get('latitude',0),a['missing_event_fields'].get('longitude',0)])
+          with open('annual_summary.csv','w') as f:
+              w=csv.writer(f);w.writerow(['year','casualties','collisions','fatal','serious','slight','ksi','missing_lat','missing_lon']);w.writerows(rows)
+          print(Path('annual_summary.csv').read_text())
+          missing=set(range(2016,2026))-{r[0] for r in rows}
+          print('Missing years:',sorted(missing))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: decade-summary
+          path: annual_summary.csv
+      - run: python -c "import csv; assert {int(r['year']) for r in csv.DictReader(open('annual_summary.csv'))} == set(range(2016,2026))"
