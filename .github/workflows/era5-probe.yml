@@ -1,0 +1,40 @@
+name: ERA5-Land public access probe
+on:
+  push:
+    paths: ['.github/workflows/era5-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install 'xarray==2025.6.1' 'zarr<3' fsspec aiohttp numpy pandas
+      - name: Read metadata and a London hourly series
+        run: |
+          python - <<'PY'
+          import xarray as xr, json, numpy as np
+          url='https://arco.datastores.ecmwf.int/cadl-arco-time-009/arco/reanalysis_era5_land/sfc-pressure-precipitation/timeChunked.zarr'
+          ds=xr.open_zarr(url,consolidated=None,chunks=None)
+          print(ds)
+          print({k:dict(v.attrs) for k,v in ds.data_vars.items()})
+          name=next(k for k in ('total_precipitation','tp') if k in ds)
+          lat=next(k for k in ('latitude','lat') if k in ds.coords)
+          lon=next(k for k in ('longitude','lon') if k in ds.coords)
+          t=next(k for k in ('time','valid_time') if k in ds.coords)
+          xlon=359.87 if float(ds[lon].min())>=0 else -0.13
+          a=ds[name].sel({lat:51.5,lon:xlon},method='nearest').sel({t:slice('2022-01-01','2022-01-03T23:00:00')}).load()
+          vals=np.asarray(a.values)
+          assert vals.size==72 and np.isfinite(vals).all(), 'Incomplete hourly probe'
+          out={'source':url,'variable':name,'attrs':dict(a.attrs),'coordinates':{lat:float(a[lat]),lon:float(a[lon])},'hours':int(vals.size),'min_raw':float(vals.min()),'max_raw':float(vals.max()),'sum_raw':float(vals.sum())}
+          print(json.dumps(out,default=str))
+          open('probe.json','w').write(json.dumps(out,default=str,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: era5-land-probe
+          path: probe.json
