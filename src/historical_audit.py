@@ -37,10 +37,13 @@ def main():
         diag={"year":year,"raw_casualties":len(s),"raw_pedestrians":sum(r.get("casualty_type")=="0" for r in s),"missing_key_rows":len(missing),"duplicate_groups":len(dup),"exact_duplicate_groups":len(exact),"conflicting_groups":len(conflict),"duplicate_excess_rows":sum(len(rs)-1 for rs in dup),"missing_key_types":dict(Counter(r.get("casualty_type") for r in missing)),"conflict_types":dict(Counter(r.get("casualty_type") for rs in conflict for r in rs)),"conflicting_fields":dict(Counter(k for rs in conflict for k in rs[0] if len({r.get(k) for r in rs})>1))}
         (out/f"diagnostic-{year}.json").write_text(json.dumps(diag,indent=2))
         print(json.dumps(diag),flush=True)
-        if missing or conflict:
+        # Quarantine only groups demonstrably outside the pedestrian cohort.
+        if any(r.get("casualty_type","").strip() not in {"1","2","9"} for r in missing+[r for rs in conflict for r in rs]):
             blocked.append(year); continue
-        s=[rs[0] for rs in groups.values()]
-        result={"year":year,"collision":dict(cm,rows=len(c),columns=list(c[0])),"casualty":dict(sm,rows=len(s),columns=list(s[0])),"audit":audit(c,s),"severity_note":"Recorded severity; not adjusted"}
+        raw_count=len(s)
+        s=[r for r in s if r.get("casualty_type","").strip()=="0"]
+        # Strict audit below checks all pedestrian keys, including exact duplicates.
+        result={"year":year,"collision":dict(cm,rows=len(c),columns=list(c[0])),"casualty":dict(sm,rows=raw_count,pedestrian_rows=len(s),columns=list(s[0])),"audit":audit(c,s),"severity_note":"Recorded severity; not adjusted"}
         (out/f"{year}.json").write_text(json.dumps(result,indent=2))
         print(year,json.dumps(result["audit"]))
     if blocked: raise ValueError(f"Unresolved historical casualty keys: {blocked}")
