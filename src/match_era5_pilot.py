@@ -35,7 +35,7 @@ def match(e,d,idx):
     if min(rain)<0 or vals["wind_speed_10m"]<0:return None
     dist=distance(e["lat"],e["lon"],d["latitude"],d["longitude"])
     if dist>25:return None
-    return dict(rural=e["rural"],weather=e["weather"],ksi=e["ksi"],temperature=vals["temperature_2m"],wind=vals["wind_speed_10m"],dew=vals["dew_point_2m"],distance_km=dist,**{f"precipitation_{n}h":sum(rain[-n:]) for n in (1,3,6,24)})
+    return dict(rural=e["rural"],weather=e["weather"],ksi=e["ksi"],temperature=vals["temperature_2m"],wind=vals["wind_speed_10m"],dew=vals["dew_point_2m"],distance_km=dist,**{f"precipitation_{n}h":math.fsum(rain[-n:]) for n in (1,3,6,24)})
 def main():
     p=argparse.ArgumentParser(); p.add_argument('--per-group',type=int,default=5); p.add_argument('--all',action='store_true'); args=p.parse_args()
     assert 1<=args.per_group<=25
@@ -61,9 +61,19 @@ def main():
     for code in sorted({str(r["rural"]) for r in matched}):
         rows=[r for r in matched if str(r["rural"])==code]
         result["descriptive_by_group"][code]={"n":len(rows),"ksi":sum(r["ksi"] for r in rows),"mean_temperature":statistics.mean(r["temperature"] for r in rows),"mean_wind":statistics.mean(r["wind"] for r in rows),"rain_ge_0_1mm_1h":sum(r["precipitation_1h"]>=0.1 for r in rows),"rain_ge_0_1mm_3h":sum(r["precipitation_3h"]>=0.1 for r in rows),"police_weather_by_rain_1h": [{"weather":w,"rain_ge_0_1mm":wet,"n":n} for (w,wet),n in sorted(Counter((str(r["weather"]),r["precipitation_1h"]>=0.1) for r in rows).items())]}
+    result["agreement_sensitivity"]=[]
+    for group in ("all","1","2"):
+        for window in (1,3,6,24):
+            for threshold in (0.1,0.2,0.5,1.0):
+                rows=[r for r in matched if (group=="all" or str(r["rural"])==group) and str(r["weather"]) in {"1","2","4","5"}]
+                a,b,c,d=[sum((str(r["weather"]) in {"2","5"})==p and (r[f"precipitation_{window}h"]>=threshold-1e-9)==w for r in rows) for p,w in [(False,False),(False,True),(True,False),(True,True)]]
+                n=a+b+c+d
+                po=(a+d)/n if n else None
+                pe=((a+b)*(a+c)+(c+d)*(b+d))/n**2 if n else None
+                result["agreement_sensitivity"].append(dict(group=group,window=window,threshold=threshold,n=n,tn=a,fp=b,fn=c,tp=d,agreement=po,kappa=(po-pe)/(1-pe) if n and pe<1 else None,positive_agreement=2*d/(2*d+b+c) if 2*d+b+c else None))
     if matched:
         result["ranges"]={k:[min(r[k] for r in matched),max(r[k] for r in matched)] for k in ("temperature","wind","distance_km","precipitation_1h","precipitation_3h","precipitation_6h","precipitation_24h")}
     Path("match_summary.json").write_text(json.dumps(result,indent=2))
-    print(json.dumps(result,indent=2))
+    print(json.dumps({k:v for k,v in result.items() if k not in {"cells","agreement_sensitivity"}},indent=2))
     assert len(selected)==(len(by) if args.all else 2*args.per_group) and not errors and len(matched)==result["eligible"],"Pilot completeness gate failed"
 if __name__=="__main__":main()
