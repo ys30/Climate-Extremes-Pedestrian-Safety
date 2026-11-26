@@ -1,4 +1,4 @@
-import json, math, time, urllib.request, urllib.parse, argparse, statistics
+import json, math, time, urllib.request, urllib.parse, argparse, statistics, hashlib, os
 from collections import Counter, defaultdict
 from datetime import datetime,timedelta
 from pathlib import Path
@@ -11,7 +11,12 @@ def distance(a,b,c,d):
 def fetch(g):
     params=dict(latitude=g[0],longitude=g[1],start_date="2021-12-30",end_date="2022-01-31",hourly=",".join(VARS),models="era5",timezone="GMT",wind_speed_unit="ms",temperature_unit="celsius",precipitation_unit="mm",cell_selection="nearest",elevation="nan")
     url=BASE+"?"+urllib.parse.urlencode(params)
-    for attempt in range(3):
+    cache=Path("weather_cache")/ (hashlib.sha256(url.encode()).hexdigest()+".json")
+    cache.parent.mkdir(exist_ok=True)
+    cached=cache.exists()
+    if cached:
+        d=json.loads(cache.read_text())
+    for attempt in range(3) if not cached else range(0):
         try:
             with urllib.request.urlopen(url,timeout=45) as r:d=json.load(r)
             break
@@ -23,6 +28,8 @@ def fetch(g):
     assert ts==expected and d["utc_offset_seconds"]==0
     for v in VARS:
         assert d["hourly_units"][v]==UNITS[v] and len(h[v])==len(ts)
+    if not cached and all(isinstance(x,(int,float)) and math.isfinite(x) for v in VARS for x in h[v]) and min(h["precipitation"])>=0 and min(h["wind_speed_10m"])>=0:
+        tmp=cache.with_suffix(".tmp"); tmp.write_text(json.dumps(d)); os.replace(tmp,cache)
     return d,{t:i for i,t in enumerate(ts)},url
 
 def match(e,d,idx):
@@ -55,7 +62,7 @@ def main():
             valid=[r for r in rows if r is not None]; matched.extend(valid)
             output.append(dict(requested=g,returned=[d["latitude"],d["longitude"]],url=url,eligible=len(rows),matched=len(valid)))
         except Exception as exc:errors.append(dict(cell=g,error=repr(exc)))
-        time.sleep(1)
+        time.sleep(1.5)
     result=dict(model="era5",candidate_cells=len(by),selected_cells=len(selected),eligible=sum(len(by[g]) for g in selected),matched=len(matched),cells=output,errors=errors,groups=dict(Counter(str(r["rural"]) for r in matched)),note="Engineering pilot; selected subset is not representative. Police weather is instantaneous categorical reporting; preceding-hour precipitation is not a gold standard. Hourly precipitation ends at floor(event UTC hour).")
     result["descriptive_by_group"]={}
     for code in sorted({str(r["rural"]) for r in matched}):
