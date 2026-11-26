@@ -1,0 +1,38 @@
+name: ERA5 C0 1991-2020 climatology
+on:
+  push:
+    paths: ['.github/workflows/climate-c0.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: climate-c0
+  cancel-in-progress: false
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/cache/restore@v4
+        with:
+          path: climate_cache
+          key: climate-c0-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            climate-c0-v1-
+      - run: pip install numpy==2.2.6
+      - run: python src/climate_baseline_c0.py
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: climate_cache
+          key: climate-c0-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: climate-c0-summary
+          path: climate_c0.json
+          if-no-files-found: error
