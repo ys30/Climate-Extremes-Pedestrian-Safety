@@ -8,8 +8,11 @@ def cell(e): return (round(e["lat"]*4)/4,round(e["lon"]*4)/4)
 def distance(a,b,c,d):
     x=math.sin(math.radians(c-a)/2)**2+math.cos(math.radians(a))*math.cos(math.radians(c))*math.sin(math.radians(d-b)/2)**2
     return 6371*2*math.asin(min(1,math.sqrt(x)))
-def fetch(g):
-    params=dict(latitude=g[0],longitude=g[1],start_date="2021-12-30",end_date="2022-01-31",hourly=",".join(VARS),models="era5",timezone="GMT",wind_speed_unit="ms",temperature_unit="celsius",precipitation_unit="mm",cell_selection="nearest",elevation="nan")
+def fetch(g,month=1):
+    import calendar
+    start=datetime(2022,month,1)-timedelta(days=2)
+    end=datetime(2022,month,calendar.monthrange(2022,month)[1])+timedelta(days=1 if month!=1 else 0)
+    params=dict(latitude=g[0],longitude=g[1],start_date=start.strftime("%Y-%m-%d"),end_date=end.strftime("%Y-%m-%d"),hourly=",".join(VARS),models="era5",timezone="GMT",wind_speed_unit="ms",temperature_unit="celsius",precipitation_unit="mm",cell_selection="nearest",elevation="nan")
     url=BASE+"?"+urllib.parse.urlencode(params)
     cache=Path("weather_cache")/ (hashlib.sha256(url.encode()).hexdigest()+".json")
     cache.parent.mkdir(exist_ok=True)
@@ -24,7 +27,7 @@ def fetch(g):
             if attempt==2:raise
             time.sleep(3*(attempt+1))
     h=d["hourly"]; ts=h["time"]
-    expected=[(datetime(2021,12,30)+timedelta(hours=i)).isoformat(timespec="minutes") for i in range(33*24)]
+    expected=[(start+timedelta(hours=i)).isoformat(timespec="minutes") for i in range(((end-start).days+1)*24)]
     assert ts==expected and d["utc_offset_seconds"]==0
     for v in VARS:
         assert d["hourly_units"][v]==UNITS[v] and len(h[v])==len(ts)
@@ -44,7 +47,7 @@ def match(e,d,idx):
     if dist>25:return None
     return dict(rural=e["rural"],weather=e["weather"],ksi=e["ksi"],temperature=vals["temperature_2m"],wind=vals["wind_speed_10m"],dew=vals["dew_point_2m"],distance_km=dist,**{f"precipitation_{n}h":math.fsum(rain[-n:]) for n in (1,3,6,24)})
 def main():
-    p=argparse.ArgumentParser(); p.add_argument('--per-group',type=int,default=5); p.add_argument('--all',action='store_true'); args=p.parse_args()
+    p=argparse.ArgumentParser(); p.add_argument('--per-group',type=int,default=5); p.add_argument('--all',action='store_true'); p.add_argument('--month',type=int,default=1); args=p.parse_args()
     assert 1<=args.per_group<=25
     events=json.loads(Path("work/events.json").read_text())
     by=defaultdict(list)
@@ -57,13 +60,13 @@ def main():
     output=[]; errors=[]; matched=[]
     for g in selected:
         try:
-            d,idx,url=fetch(g)
+            d,idx,url=fetch(g,args.month)
             rows=[match(e,d,idx) for e in by[g]]
             valid=[r for r in rows if r is not None]; matched.extend(valid)
             output.append(dict(requested=g,returned=[d["latitude"],d["longitude"]],url=url,eligible=len(rows),matched=len(valid)))
         except Exception as exc:errors.append(dict(cell=g,error=repr(exc)))
         time.sleep(1.5)
-    result=dict(model="era5",candidate_cells=len(by),selected_cells=len(selected),eligible=sum(len(by[g]) for g in selected),matched=len(matched),cells=output,errors=errors,groups=dict(Counter(str(r["rural"]) for r in matched)),note="Engineering pilot; selected subset is not representative. Police weather is instantaneous categorical reporting; preceding-hour precipitation is not a gold standard. Hourly precipitation ends at floor(event UTC hour).")
+    result=dict(month=args.month,model="era5",candidate_cells=len(by),selected_cells=len(selected),eligible=sum(len(by[g]) for g in selected),matched=len(matched),cells=output,errors=errors,groups=dict(Counter(str(r["rural"]) for r in matched)),note="Engineering pilot; selected subset is not representative. Police weather is instantaneous categorical reporting; preceding-hour precipitation is not a gold standard. Hourly precipitation ends at floor(event UTC hour).")
     result["descriptive_by_group"]={}
     for code in sorted({str(r["rural"]) for r in matched}):
         rows=[r for r in matched if str(r["rural"])==code]
