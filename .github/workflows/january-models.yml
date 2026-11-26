@@ -1,0 +1,32 @@
+name: January exploratory severity models
+on:
+  push:
+    paths: ['.github/workflows/january-models.yml','src/january_models.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/cache/restore@v4
+        with:
+          path: weather_cache
+          key: era5-january-2022-v1-models-${{ github.run_id }}
+          restore-keys: |
+            era5-january-2022-v1-
+          fail-on-cache-miss: true
+      - run: pip install 'pandas==2.2.3' 'statsmodels==0.14.5'
+      - run: python src/pilot_events.py
+      - run: python src/january_models.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: january-models
+          path: january_models.json
+          if-no-files-found: error
