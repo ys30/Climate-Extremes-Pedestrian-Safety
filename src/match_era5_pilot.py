@@ -1,4 +1,4 @@
-import json, math, time, urllib.request, urllib.parse
+import json, math, time, urllib.request, urllib.parse, argparse, statistics
 from collections import Counter, defaultdict
 from datetime import datetime,timedelta
 from pathlib import Path
@@ -37,13 +37,16 @@ def match(e,d,idx):
     if dist>25:return None
     return dict(rural=e["rural"],weather=e["weather"],ksi=e["ksi"],temperature=vals["temperature_2m"],wind=vals["wind_speed_10m"],dew=vals["dew_point_2m"],distance_km=dist,**{f"precipitation_{n}h":sum(rain[-n:]) for n in (1,3,6,24)})
 def main():
+    p=argparse.ArgumentParser(); p.add_argument('--per-group',type=int,default=5); p.add_argument('--all',action='store_true'); args=p.parse_args()
+    assert 1<=args.per_group<=25
     events=json.loads(Path("work/events.json").read_text())
     by=defaultdict(list)
     for e in events:by[cell(e)].append(e)
     selected=[]
     for code in ("1","2"):
         ranked=sorted(by,key=lambda g:(-sum(e["rural"]==code for e in by[g]),g))
-        selected.extend([g for g in ranked if g not in selected and any(e["rural"]==code for e in by[g])][:5])
+        selected.extend([g for g in ranked if g not in selected and any(e["rural"]==code for e in by[g])][:args.per_group])
+    if args.all: selected=sorted(by)
     output=[]; errors=[]; matched=[]
     for g in selected:
         try:
@@ -53,10 +56,14 @@ def main():
             output.append(dict(requested=g,returned=[d["latitude"],d["longitude"]],url=url,eligible=len(rows),matched=len(valid)))
         except Exception as exc:errors.append(dict(cell=g,error=repr(exc)))
         time.sleep(1)
-    result=dict(model="era5",candidate_cells=len(by),selected_cells=len(selected),eligible=sum(len(by[g]) for g in selected),matched=len(matched),cells=output,errors=errors,groups=dict(Counter(str(r["rural"]) for r in matched)),note="Purposive high-count grid engineering pilot; not representative. Hourly precipitation ends at floor(event UTC hour).")
+    result=dict(model="era5",candidate_cells=len(by),selected_cells=len(selected),eligible=sum(len(by[g]) for g in selected),matched=len(matched),cells=output,errors=errors,groups=dict(Counter(str(r["rural"]) for r in matched)),note="Engineering pilot; selected subset is not representative. Police weather is instantaneous categorical reporting; preceding-hour precipitation is not a gold standard. Hourly precipitation ends at floor(event UTC hour).")
+    result["descriptive_by_group"]={}
+    for code in sorted({str(r["rural"]) for r in matched}):
+        rows=[r for r in matched if str(r["rural"])==code]
+        result["descriptive_by_group"][code]={"n":len(rows),"ksi":sum(r["ksi"] for r in rows),"mean_temperature":statistics.mean(r["temperature"] for r in rows),"mean_wind":statistics.mean(r["wind"] for r in rows),"rain_ge_0_1mm_1h":sum(r["precipitation_1h"]>=0.1 for r in rows),"rain_ge_0_1mm_3h":sum(r["precipitation_3h"]>=0.1 for r in rows),"police_weather_by_rain_1h": [{"weather":w,"rain_ge_0_1mm":wet,"n":n} for (w,wet),n in sorted(Counter((str(r["weather"]),r["precipitation_1h"]>=0.1) for r in rows).items())]}
     if matched:
         result["ranges"]={k:[min(r[k] for r in matched),max(r[k] for r in matched)] for k in ("temperature","wind","distance_km","precipitation_1h","precipitation_3h","precipitation_6h","precipitation_24h")}
     Path("match_summary.json").write_text(json.dumps(result,indent=2))
     print(json.dumps(result,indent=2))
-    assert len(selected)==10 and not errors and len(matched)==result["eligible"],"Pilot completeness gate failed"
+    assert len(selected)==(len(by) if args.all else 2*args.per_group) and not errors and len(matched)==result["eligible"],"Pilot completeness gate failed"
 if __name__=="__main__":main()
