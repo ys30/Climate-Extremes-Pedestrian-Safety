@@ -1,0 +1,40 @@
+name: ERA5 E3 full January matching
+on:
+  push:
+    paths: ['.github/workflows/era5-e3.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: era5-e3
+  cancel-in-progress: false
+jobs:
+  match:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/cache/restore@v4
+        with:
+          path: weather_cache
+          key: era5-january-2022-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            era5-january-2022-v1-
+      - run: python src/pilot_events.py
+      - run: python src/match_era5_pilot.py --all
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: weather_cache
+          key: era5-january-2022-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: era5-e3-summary
+          path: |
+            pilot_manifest.json
+            match_summary.json
+          if-no-files-found: error
