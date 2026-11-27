@@ -1,0 +1,53 @@
+name: ERA5 C2 rural-priority climate anomalies
+on:
+  push:
+    paths: ['.github/workflows/climate-c2.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: climate-c2
+  cancel-in-progress: false
+jobs:
+  pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 45949649518
+          pattern: cohort-month-*
+          merge-multiple: true
+          path: cohorts
+      - uses: actions/cache/restore@v4
+        with:
+          path: climate_cache
+          key: climate-c0-v1-c2-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            climate-c0-v1-
+      - run: pip install numpy==2.2.6
+      - run: python src/annual_audit.py
+      - run: python src/climate_grid_selection_c2.py
+      - run: python src/climate_baseline_c0.py --grids climate_grids.json --output climate_c1.json
+      - run: python src/climate_cohort_pilot.py
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: climate_cache
+          key: climate-c0-v1-c1-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: climate-c2-results
+          path: |
+            grid_inventory.csv
+            climate_grids.json
+            climate_c1.json
+            climate_cohort_pilot.json
+          if-no-files-found: error
