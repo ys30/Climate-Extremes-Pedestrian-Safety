@@ -1,0 +1,4 @@
+group,n,ksi,mean_temperature_anomaly,hot,cold,wind,extreme_precip,precip_threshold_available,compound_hot_wind,source_run
+all,4157,1142,1.2301059837764574,344,141,144,44,4157,35,45954386391
+urban,4066,1114,1.2343014774754788,336,137,144,44,4066,35,45954386391
+rural,91,28,1.0426457927850197,8,4,0,0,91,0,45954386391
