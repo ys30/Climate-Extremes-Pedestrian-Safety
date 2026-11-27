@@ -7,9 +7,14 @@ from weather_probe_openmeteo import BASE,UNITS
 GRIDS=[(51.5,-0.25),(56.0,-3.25),(52.5,-3.5)]
 VARIABLES=["temperature_2m","precipitation","wind_speed_10m"]
 def main():
+    import argparse
+    p=argparse.ArgumentParser();p.add_argument("--grids");p.add_argument("--output",default="climate_c0.json");args=p.parse_args()
+    grids=[tuple(g) for g in json.loads(Path(args.grids).read_text())] if args.grids else GRIDS
+    assert 1<=len(grids)<=10 and len(set(grids))==len(grids)
+    assert all(49<=a<=61 and -9<=b<=3 and a*4==round(a*4) and b*4==round(b*4) for a,b in grids)
     root=Path("climate_cache");root.mkdir(exist_ok=True)
     out=[]; errors=[]
-    for lat,lon in GRIDS:
+    for lat,lon in grids:
         groups=defaultdict(lambda:defaultdict(list)); sources=[]
         for year in range(1991,2021):
             params=dict(latitude=lat,longitude=lon,start_date=f"{year}-01-01",end_date=f"{year}-12-31",hourly=",".join(VARIABLES),models="era5",timezone="GMT",wind_speed_unit="ms",temperature_unit="celsius",precipitation_unit="mm",cell_selection="nearest",elevation="nan")
@@ -60,6 +65,6 @@ def main():
                 stats.append(rec)
             assert len(stats)==288 and sum(x["n"] for x in stats)==262992
         out.append(dict(grid=[lat,lon],complete_years=len(sources),sources=sources,statistics=stats))
-        Path("climate_c0.json").write_text(json.dumps(dict(reference="1991-2020",model="ERA5 via Open-Meteo",conditioning="calendar month and UTC hour",grids=out,errors=errors,precipitation="total precipitation including snow; wet hour >=0.1 mm; minimum 30 wet hours for p95"),indent=2))
+        Path(args.output).write_text(json.dumps(dict(reference="1991-2020",model="ERA5 via Open-Meteo",conditioning="calendar month and UTC hour",grids=out,errors=errors,precipitation="total precipitation including snow; wet hour >=0.1 mm; minimum 30 wet hours for p95"),indent=2))
     assert not errors and all(len(x["statistics"])==288 for x in out),"Incomplete climatology; no partial normals accepted"
 if __name__=="__main__":main()
