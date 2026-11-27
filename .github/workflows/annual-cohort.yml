@@ -1,8 +1,11 @@
 name: 2022 annual cohort reconstruction
 on:
   push:
-    paths: ['.github/workflows/annual-cohort.yml']
+    paths: ['.github/workflows/annual-cohort.yml','src/annual_audit.py','src/build_month_cohort.py']
   workflow_dispatch:
+concurrency:
+  group: annual-cohort-2022
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
