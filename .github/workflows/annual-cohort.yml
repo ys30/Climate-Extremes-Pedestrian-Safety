@@ -1,0 +1,52 @@
+name: 2022 annual cohort reconstruction
+on:
+  push:
+    paths: ['.github/workflows/annual-cohort.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  month:
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        month: [1,2,3,4,5,6,7,8,9,10,11,12]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/cache/restore@v4
+        with:
+          path: weather_cache
+          key: cohort-restore-${{ matrix.month }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ matrix.month == 1 && 'era5-january-2022-v1-' || format('era5-2022-month-{0}-v1-', matrix.month) }}
+          fail-on-cache-miss: true
+      - run: python src/pilot_events.py --month ${{ matrix.month }}
+      - run: python src/build_month_cohort.py --month ${{ matrix.month }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cohort-month-${{ matrix.month }}
+          path: cohort_*.json
+          if-no-files-found: error
+          retention-days: 7
+  annual:
+    needs: month
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cohort-month-*
+          merge-multiple: true
+          path: cohorts
+      - run: python src/annual_audit.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: annual-cohort-audit
+          path: annual_audit.json
+          if-no-files-found: error
