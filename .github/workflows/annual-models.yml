@@ -1,0 +1,34 @@
+name: 2022 annual severity models
+on:
+  push:
+    paths: ['.github/workflows/annual-models.yml','src/annual_models.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 45949649518
+          pattern: cohort-month-*
+          merge-multiple: true
+          path: cohorts
+      - run: pip install 'pandas==2.2.3' 'statsmodels==0.14.5'
+      - run: python src/annual_models.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: annual-model-results
+          path: |
+            annual_audit.json
+            annual_models.json
+          if-no-files-found: error
