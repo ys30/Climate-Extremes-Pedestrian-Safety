@@ -1,0 +1,38 @@
+name: C2 spatial robustness and geographic holdout
+on:
+  push:
+    paths: ['.github/workflows/climate-spatial.yml','src/climate_spatial.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 45949649518
+          pattern: cohort-month-*
+          merge-multiple: true
+          path: cohorts
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 46054162728
+          name: climate-c2-results
+      - run: pip install 'pandas==2.2.3' 'statsmodels==0.14.5'
+      - run: python src/annual_audit.py
+      - run: python src/climate_spatial.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: climate-spatial-results
+          path: climate_spatial.json
+          if-no-files-found: error
