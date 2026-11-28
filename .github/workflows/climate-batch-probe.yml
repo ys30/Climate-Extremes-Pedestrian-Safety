@@ -1,0 +1,32 @@
+name: ERA5 batch equivalence probe
+on:
+  push:
+    paths: ['.github/workflows/climate-batch-probe.yml','src/climate_batch_probe.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/cache/restore@v4
+        with:
+          path: climate_cache
+          key: batch-probe-${{ github.run_id }}
+          restore-keys: |
+            climate-c0-v1-c2-
+            climate-c0-v1-
+          fail-on-cache-miss: true
+      - run: pip install numpy==2.2.6
+      - run: python src/climate_batch_probe.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: batch-probe
+          path: batch_probe.json
+          if-no-files-found: error
