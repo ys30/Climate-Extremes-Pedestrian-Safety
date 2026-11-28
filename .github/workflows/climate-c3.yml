@@ -1,0 +1,88 @@
+name: ERA5 C3 fifty-grid climate baseline
+on:
+  push:
+    paths: ['.github/workflows/climate-c3.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: climate-c3
+  cancel-in-progress: false
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 46054162728
+          name: climate-c2-results
+      - run: python src/climate_c3_plan.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c3-plan
+          path: c3_plan.json
+  pair:
+    needs: plan
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        pair: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: c3-plan
+      - uses: actions/cache/restore@v4
+        with:
+          path: c3_cache
+          key: c3-v1-pair-${{ matrix.pair }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            c3-v1-pair-${{ matrix.pair }}-
+      - run: pip install numpy==2.2.6
+      - run: python src/climate_c3_batch.py --pair ${{ matrix.pair }}
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: c3_cache
+          key: c3-v1-pair-${{ matrix.pair }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c3-pair-${{ matrix.pair }}
+          path: c3_pair_*.json
+          if-no-files-found: error
+  merge:
+    needs: [plan,pair]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: c3-plan
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: c3-pair-*
+          merge-multiple: true
+          path: pairs
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 46054162728
+          name: climate-c2-results
+      - run: python src/climate_c3_merge.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c3-complete-baseline
+          path: |
+            climate_c3.json
+            c3_plan.json
+            grid_inventory.csv
+          if-no-files-found: error
